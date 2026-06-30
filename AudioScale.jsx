@@ -182,16 +182,36 @@
     //   2D 图层 value=[x,y] → 只改 [0][1]
     //   3D 图层 value=[x,y,z] → 只改 [0][1]，保留 [2]（Z 缩放）
     // 这样不会因维度不匹配触发 AE 的 SetDimensionsSeparated 内部验证故障。
-    function buildBasicExpr(name, o){
-        return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+    //
+    // 关键：不写死效果显示名 "Both Channels"（中文版叫"双声道"会找不到）。
+    // 改成在脚本侧探测 Audio Amplitude 图层上 effect 的 matchName，
+    // 找到包含 "Stereo" 或 "Both" 的那个效果索引，再把索引写进表达式。
+    // matchName 是跨语言固定的，比显示名可靠。
+    function findBothChannelsEffectIndex(ampLayer){
+        var fx = ampLayer.property("ADBE Effect Parade");
+        if(!fx) return 1; // 兜底
+        // Audio Amplitude 图层有三个 Stereo Mixed 效果：Left / Right / Both
+        // 顺序固定为 1=Left, 2=Right, 3=Both
+        for(var i=1;i<=fx.numProperties;i++){
+            var p = fx.property(i);
+            var mn = p.matchName;
+            // matchName 形如 "ADBE Stereo Mixed"
+            // 靠"名称"判断第几个是 Both 不可靠，按顺序取第 3 个最稳
+            if(i === 3) return i;
+        }
+        return 1;
+    }
+
+    function buildBasicExpr(name, bothIdx, o){
+        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
              + 's=amp*' + o.intensity + ';\n'
              + 'v=value;\n'
              + 'v[0]=' + o.baseScale + '+s;\n'
              + 'v[1]=' + o.baseScale + '+s;\n'
              + 'v';
     }
-    function buildSmoothExpr(name, o){
-        return 'ampP=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+    function buildSmoothExpr(name, bothIdx, o){
+        return 'ampP=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
              + 'a=ampP.smooth(' + o.smoothW + ',5);\n'
              + 'th=a>' + o.threshold + '?a-' + o.threshold + ':0;\n'
              + 's=th*' + o.intensity + ';\n'
@@ -200,8 +220,8 @@
              + 'v[1]=' + o.baseScale + '+s;\n'
              + 'v';
     }
-    function buildBandExpr(name, o){
-        return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+    function buildBandExpr(name, bothIdx, o){
+        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
              + 's=amp*' + o.intensity + ';\n'
              + 'v=value;\n'
              + 'v[0]=' + o.baseScale + '+s;\n'
@@ -222,7 +242,10 @@
             applyBand(comp, audioLayer, targets, opts);
         } else {
             var amp = convertAudioToKeyframes(comp, audioLayer, null);
-            var expr = (opts.mode === MODE_BASIC) ? buildBasicExpr(amp.name, opts) : buildSmoothExpr(amp.name, opts);
+            var bothIdx = findBothChannelsEffectIndex(amp);
+            var expr = (opts.mode === MODE_BASIC)
+                ? buildBasicExpr(amp.name, bothIdx, opts)
+                : buildSmoothExpr(amp.name, bothIdx, opts);
             for(var i=0;i<targets.length;i++) applyScaleExpression(targets[i], expr);
         }
     }
@@ -251,7 +274,8 @@
         for(var i=1;i<=comp.numLayers;i++) comp.layer(i).selected=false;
         for(var t=0;t<targets.length;t++){
             var idx = t % ampLayers.length;   // 目标层轮询分配到不同频段
-            applyScaleExpression(targets[t], buildBandExpr(ampLayers[idx].name, opts));
+            var bothIdx = findBothChannelsEffectIndex(ampLayers[idx]);
+            applyScaleExpression(targets[t], buildBandExpr(ampLayers[idx].name, bothIdx, opts));
         }
     }
 
