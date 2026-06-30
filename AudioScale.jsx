@@ -169,40 +169,44 @@
 
     function applyScaleExpression(target, expr){
         var scaleProp = target.property("ADBE Transform Group").property("ADBE Scale");
-        // 不直接操作 dimensionsSeparated（AE 2026 在某些图层类型上会触发
-        // "stream doesn't support separated dimensions" 内部验证错误）。
-        // 改为：先取消既有表达式 → 用 setValue 写入一个确定的二维值，
-        // AE 会自动把 Scale 规整为非分离状态 → 再写入表达式。
+        // 关键：不要调用 setValue 或 dimensionsSeparated，二者在 3D 图层 /
+        // 某些流类型上会触发 AE 内部 "SetDimensionsSeparated" 验证故障。
+        // 表达式本身用 value 关键字继承当前维度（2D 返回 [x,y]，3D 返回 [x,y,z]），
+        // 只改 X/Y 保留 Z，从根上避免维度不匹配。
         try { scaleProp.expression = ""; } catch(_){}
-        try {
-            // 先读当前值，保证写入的是合法的二维数组
-            var cur = scaleProp.value;
-            if (cur && cur.length === 2) {
-                scaleProp.setValue(cur);
-            } else {
-                scaleProp.setValue([100, 100]);
-            }
-        } catch(_){}
         scaleProp.expression = expr;
     }
 
     // ============ 表达式生成 ============
+    // 全部用 value 关键字继承 Scale 当前维度：
+    //   2D 图层 value=[x,y] → 只改 [0][1]
+    //   3D 图层 value=[x,y,z] → 只改 [0][1]，保留 [2]（Z 缩放）
+    // 这样不会因维度不匹配触发 AE 的 SetDimensionsSeparated 内部验证故障。
     function buildBasicExpr(name, o){
         return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
              + 's=amp*' + o.intensity + ';\n'
-             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+             + 'v=value;\n'
+             + 'v[0]=' + o.baseScale + '+s;\n'
+             + 'v[1]=' + o.baseScale + '+s;\n'
+             + 'v';
     }
     function buildSmoothExpr(name, o){
         return 'ampP=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
              + 'a=ampP.smooth(' + o.smoothW + ',5);\n'
-             + 'v=a>' + o.threshold + '?a-' + o.threshold + ':0;\n'
-             + 's=v*' + o.intensity + ';\n'
-             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+             + 'th=a>' + o.threshold + '?a-' + o.threshold + ':0;\n'
+             + 's=th*' + o.intensity + ';\n'
+             + 'v=value;\n'
+             + 'v[0]=' + o.baseScale + '+s;\n'
+             + 'v[1]=' + o.baseScale + '+s;\n'
+             + 'v';
     }
     function buildBandExpr(name, o){
         return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
              + 's=amp*' + o.intensity + ';\n'
-             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+             + 'v=value;\n'
+             + 'v[0]=' + o.baseScale + '+s;\n'
+             + 'v[1]=' + o.baseScale + '+s;\n'
+             + 'v';
     }
 
     // ============ 主逻辑 ============
