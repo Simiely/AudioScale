@@ -203,7 +203,7 @@
     }
 
     function buildBasicExpr(name, bothIdx, o){
-        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
+        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')(1);\n'
              + 's=amp*' + o.intensity + ';\n'
              + 'v=value;\n'
              + 'v[0]=' + o.baseScale + '+s;\n'
@@ -211,7 +211,7 @@
              + 'v';
     }
     function buildSmoothExpr(name, bothIdx, o){
-        return 'ampP=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
+        return 'ampP=thisComp.layer("' + name + '").effect(' + bothIdx + ')(1);\n'
              + 'a=ampP.smooth(' + o.smoothW + ',5);\n'
              + 'th=a>' + o.threshold + '?a-' + o.threshold + ':0;\n'
              + 's=th*' + o.intensity + ';\n'
@@ -221,7 +221,7 @@
              + 'v';
     }
     function buildBandExpr(name, bothIdx, o){
-        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')("Slider");\n'
+        return 'amp=thisComp.layer("' + name + '").effect(' + bothIdx + ')(1);\n'
              + 's=amp*' + o.intensity + ';\n'
              + 'v=value;\n'
              + 'v[0]=' + o.baseScale + '+s;\n'
