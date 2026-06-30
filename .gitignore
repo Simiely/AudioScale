@@ -1,0 +1,14 @@
+# After Effects
+*.aep
+*.aepx
+*.aecap
+Adobe Premiere Pro Video Preview/
+cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

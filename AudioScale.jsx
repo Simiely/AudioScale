@@ -1,0 +1,196 @@
+// AudioScale.jsx — 通过音频驱动图层缩放
+// 模式：基础振幅映射 / 平滑+阈值 / 频段分离
+// 兼容 After Effects 2026 (ExtendScript)
+// 安装：放入 Scripts/ScriptUI Panels/ 后重启 AE，菜单 窗口 > AudioScale.jsx
+
+(function AudioScaleUI(thisObj){
+    var MODE_BASIC  = "基础振幅映射";
+    var MODE_SMOOTH = "平滑+阈值";
+    var MODE_BAND   = "频段分离";
+
+    // ============ 主 UI ============
+    function buildUI(thisObj){
+        var win = (thisObj instanceof Panel)
+            ? thisObj
+            : new Window("palette", "Audio Scale", undefined, {resizeable:true});
+        win.orientation = "column";
+        win.alignChildren = ["fill","top"];
+        win.margins = 12; win.spacing = 8;
+
+        win.add("statictext", undefined, "模式：");
+        var modeList = win.add("dropdownlist", undefined, [MODE_BASIC, MODE_SMOOTH, MODE_BAND]);
+        modeList.selection = 0;
+
+        win.add("statictext", undefined, "强度（振幅→缩放像素）：");
+        var intensity = win.add("slider", undefined, 30, 0, 200);
+        intensity.preferredSize.width = 220;
+        var intensityTxt = win.add("edittext", undefined, "30");
+        intensityTxt.preferredSize.width = 50;
+
+        win.add("statictext", undefined, "基础缩放（%）：");
+        var baseScale = win.add("edittext", undefined, "100");
+        baseScale.preferredSize.width = 50;
+
+        var gSmooth = win.add("panel", undefined, "平滑/阈值");
+        gSmooth.orientation = "column"; gSmooth.alignChildren = ["fill","top"];
+        gSmooth.add("statictext", undefined, "平滑宽度（秒）：");
+        var smoothW = gSmooth.add("edittext", undefined, "0.1");
+        gSmooth.add("statictext", undefined, "底噪阈值：");
+        var threshold = gSmooth.add("edittext", undefined, "8");
+
+        var gBand = win.add("panel", undefined, "频段");
+        gBand.orientation = "column"; gBand.alignChildren = ["fill","top"];
+        gBand.add("statictext", undefined, "频段数（2 或 3）：");
+        var bandCount = gBand.add("edittext", undefined, "3");
+
+        var btn = win.add("button", undefined, "应用到选中图层");
+
+        function updateVisibility(){
+            gSmooth.visible = (modeList.selection.text === MODE_SMOOTH);
+            gBand.visible   = (modeList.selection.text === MODE_BAND);
+            win.layout.layout(true);
+        }
+        modeList.onChange = updateVisibility;
+        updateVisibility();
+
+        intensity.onChanging = function(){ intensityTxt.text = Math.round(intensity.value); };
+        intensityTxt.onChange = function(){ var v=parseFloat(intensityTxt.text); if(!isNaN(v)) intensity.value=v; };
+
+        btn.onClick = function(){
+            var opts = {
+                mode: modeList.selection.text,
+                intensity: parseFloat(intensityTxt.text) || 0,
+                baseScale: parseFloat(baseScale.text) || 100,
+                smoothW: parseFloat(smoothW.text) || 0.1,
+                threshold: parseFloat(threshold.text) || 0,
+                bandCount: parseInt(bandCount.text,10) || 3
+            };
+            try {
+                app.beginUndoGroup("Audio Scale");
+                applyAudioScale(opts);
+                app.endUndoGroup();
+            } catch(e){
+                try{ app.endUndoGroup(); }catch(_){}
+                alert("出错：" + e.toString());
+            }
+        };
+
+        if(win instanceof Window){
+            win.layout.layout(true);
+            win.layout.resize();
+            win.onResizing = win.onResize = function(){ this.layout.resize(); };
+        }
+        return win;
+    }
+
+    // ============ 工具函数 ============
+    function getSelectedAudioLayer(comp){
+        for(var i=1;i<=comp.numLayers;i++){
+            var l = comp.layer(i);
+            if(l.selected && l.hasAudio && l.property("ADBE Audio Group")) return l;
+        }
+        return null;
+    }
+
+    function getTargetLayers(comp, audioLayer){
+        var arr = [];
+        for(var i=1;i<=comp.numLayers;i++){
+            var l = comp.layer(i);
+            if(l.selected && l !== audioLayer && l.property("ADBE Transform Group")) arr.push(l);
+        }
+        return arr;
+    }
+
+    // 调用 AE 内置“将音频转换为关键帧”，返回生成的 Audio Amplitude 图层
+    function convertAudioToKeyframes(comp, audioLayer, suffix){
+        for(var i=1;i<=comp.numLayers;i++) comp.layer(i).selected=false;
+        audioLayer.selected = true;
+        var names = ["Convert Audio to Keyframes", "将音频转换为关键帧"];
+        var cmdId = 0;
+        for(var n=0;n<names.length;n++){ cmdId = app.findMenuCommandId(names[n]); if(cmdId) break; }
+        if(!cmdId) throw new Error("找不到 'Convert Audio to Keyframes' 菜单（中文版请确认菜单名）");
+        app.executeCommand(cmdId);
+        var found = null;
+        for(var j=1;j<=comp.numLayers;j++){
+            if(comp.layer(j).name.indexOf("Audio Amplitude")===0){ found = comp.layer(j); break; }
+        }
+        if(!found) throw new Error("未生成 Audio Amplitude 图层");
+        if(suffix) found.name = "Audio Amplitude " + suffix;
+        return found;
+    }
+
+    function applyScaleExpression(target, expr){
+        var scaleProp = target.property("ADBE Transform Group").property("ADBE Scale");
+        scaleProp.dimensionsSeparated = false;
+        scaleProp.expression = expr;
+    }
+
+    // ============ 表达式生成 ============
+    function buildBasicExpr(name, o){
+        return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+             + 's=amp*' + o.intensity + ';\n'
+             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+    }
+    function buildSmoothExpr(name, o){
+        return 'ampP=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+             + 'a=ampP.smooth(' + o.smoothW + ',5);\n'
+             + 'v=a>' + o.threshold + '?a-' + o.threshold + ':0;\n'
+             + 's=v*' + o.intensity + ';\n'
+             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+    }
+    function buildBandExpr(name, o){
+        return 'amp=thisComp.layer("' + name + '").effect("Both Channels")("Slider");\n'
+             + 's=amp*' + o.intensity + ';\n'
+             + '[(' + o.baseScale + '+s),(' + o.baseScale + '+s)]';
+    }
+
+    // ============ 主逻辑 ============
+    function applyAudioScale(opts){
+        var comp = app.project.activeItem;
+        if(!comp || !(comp instanceof CompItem)){ alert("请先打开一个合成"); return; }
+        var audioLayer = getSelectedAudioLayer(comp);
+        if(!audioLayer){ alert("请选中一个含音频的图层"); return; }
+        var targets = getTargetLayers(comp, audioLayer);
+        if(targets.length===0){ alert("请同时选中要缩放的目标图层（Ctrl/Shift 多选）"); return; }
+
+        if(opts.mode === MODE_BAND){
+            applyBand(comp, audioLayer, targets, opts);
+        } else {
+            var amp = convertAudioToKeyframes(comp, audioLayer, null);
+            var expr = (opts.mode === MODE_BASIC) ? buildBasicExpr(amp.name, opts) : buildSmoothExpr(amp.name, opts);
+            for(var i=0;i<targets.length;i++) applyScaleExpression(targets[i], expr);
+        }
+    }
+
+    // 频段分离：复制音频层，加 Bass & Treble 粗分频，各自转关键帧
+    function applyBand(comp, audioLayer, targets, opts){
+        var n = opts.bandCount; if(n<2) n=2; if(n>3) n=3;
+        var cfg = [
+            {suffix:"Low",  bass:24,  treble:-24},
+            {suffix:"Mid",  bass:-6,  treble:-6},
+            {suffix:"High", bass:-24, treble:24}
+        ];
+        var ampLayers = [];
+        for(var k=0;k<n;k++){
+            var dup = audioLayer.duplicate();
+            dup.name = audioLayer.name + "_" + cfg[k].suffix;
+            var fx = dup.property("ADBE Effect Parade");
+            var bt = fx.addProperty("ADBE Bass & Treble");
+            bt.property("ADBE Bass").setValue(cfg[k].bass);
+            bt.property("ADBE Treble").setValue(cfg[k].treble);
+            dup.moveToEnd();
+            var amp = convertAudioToKeyframes(comp, dup, cfg[k].suffix);
+            dup.enabled = false;            // 转换完成后隐藏视频，避免遮挡
+            ampLayers.push(amp);
+        }
+        for(var i=1;i<=comp.numLayers;i++) comp.layer(i).selected=false;
+        for(var t=0;t<targets.length;t++){
+            var idx = t % ampLayers.length;   // 目标层轮询分配到不同频段
+            applyScaleExpression(targets[t], buildBandExpr(ampLayers[idx].name, opts));
+        }
+    }
+
+    // ============ 启动 ============
+    var ui = buildUI(thisObj);
+    if(ui instanceof Window) ui.show();
+})(this);
