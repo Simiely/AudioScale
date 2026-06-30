@@ -102,19 +102,67 @@
     }
 
     // 调用 AE 内置“将音频转换为关键帧”，返回生成的 Audio Amplitude 图层
+    // 注意：不依赖图层名匹配（AE 2026 中文版生成的图层名可能本地化），改为对比新增图层
     function convertAudioToKeyframes(comp, audioLayer, suffix){
+        // 记录执行前的图层引用（用 === 比较，比 name 更可靠）
+        var beforeLayers = [];
+        for(var i=1;i<=comp.numLayers;i++) beforeLayers.push(comp.layer(i));
+
         for(var i=1;i<=comp.numLayers;i++) comp.layer(i).selected=false;
         audioLayer.selected = true;
-        var names = ["Convert Audio to Keyframes", "将音频转换为关键帧"];
+
+        // 多语言菜单名候选
+        var names = [
+            "Convert Audio to Keyframes",
+            "将音频转换为关键帧",
+            "音频转换为关键帧",
+            "Audio to Keyframes"
+        ];
         var cmdId = 0;
         for(var n=0;n<names.length;n++){ cmdId = app.findMenuCommandId(names[n]); if(cmdId) break; }
-        if(!cmdId) throw new Error("找不到 'Convert Audio to Keyframes' 菜单（中文版请确认菜单名）");
+        if(!cmdId) throw new Error("找不到 'Convert Audio to Keyframes' 菜单（中文版请在脚本 names 数组里补充实际菜单名）");
         app.executeCommand(cmdId);
+
+        // 执行命令后，通过对比找出新增的图层（不依赖名字）
         var found = null;
         for(var j=1;j<=comp.numLayers;j++){
-            if(comp.layer(j).name.indexOf("Audio Amplitude")===0){ found = comp.layer(j); break; }
+            var layer = comp.layer(j);
+            var existed = false;
+            for(var k=0;k<beforeLayers.length;k++){
+                if(beforeLayers[k] === layer){ existed = true; break; }
+            }
+            if(!existed){ found = layer; break; }
         }
-        if(!found) throw new Error("未生成 Audio Amplitude 图层");
+
+        // 兜底：如果对比没找到，按名字关键词匹配
+        if(!found){
+            for(var m=1;m<=comp.numLayers;m++){
+                var nm = comp.layer(m).name;
+                if(nm.indexOf("Audio Amplitude")===0 ||
+                   nm.indexOf("Amplitude")>=0 ||
+                   nm.indexOf("音频")>=0){
+                    found = comp.layer(m);
+                    break;
+                }
+            }
+        }
+
+        if(!found){
+            var msg = "未生成 Audio Amplitude 图层。\n";
+            msg += "执行前 " + beforeLayers.length + " 层，执行后 " + comp.numLayers + " 层。\n";
+            if(comp.numLayers > beforeLayers.length){
+                msg += "新增图层：";
+                for(var p=1;p<=comp.numLayers;p++){
+                    var existed2 = false;
+                    for(var q=0;q<beforeLayers.length;q++){
+                        if(beforeLayers[q] === comp.layer(p)){ existed2 = true; break; }
+                    }
+                    if(!existed2) msg += " [" + comp.layer(p).name + "]";
+                }
+                msg += "\n请在脚本中把上述图层名加入匹配逻辑。";
+            }
+            throw new Error(msg);
+        }
         if(suffix) found.name = "Audio Amplitude " + suffix;
         return found;
     }
