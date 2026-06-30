@@ -134,13 +134,14 @@
             if(!existed){ found = layer; break; }
         }
 
-        // 兜底：如果对比没找到，按名字关键词匹配
+        // 兜底：如果对比没找到，按名字关键词匹配（中英文都覆盖）
         if(!found){
             for(var m=1;m<=comp.numLayers;m++){
                 var nm = comp.layer(m).name;
                 if(nm.indexOf("Audio Amplitude")===0 ||
                    nm.indexOf("Amplitude")>=0 ||
-                   nm.indexOf("音频")>=0){
+                   nm.indexOf("音频")>=0 ||
+                   nm.indexOf("振幅")>=0){
                     found = comp.layer(m);
                     break;
                 }
@@ -189,17 +190,10 @@
     // matchName 是跨语言固定的，比显示名可靠。
     function findBothChannelsEffectIndex(ampLayer){
         var fx = ampLayer.property("ADBE Effect Parade");
-        if(!fx) return 1; // 兜底
-        // Audio Amplitude 图层有三个 Stereo Mixed 效果：Left / Right / Both
-        // 顺序固定为 1=Left, 2=Right, 3=Both
-        for(var i=1;i<=fx.numProperties;i++){
-            var p = fx.property(i);
-            var mn = p.matchName;
-            // matchName 形如 "ADBE Stereo Mixed"
-            // 靠"名称"判断第几个是 Both 不可靠，按顺序取第 3 个最稳
-            if(i === 3) return i;
-        }
-        return 1;
+        // Audio Amplitude 图层效果顺序固定：1=Left, 2=Right, 3=Both
+        // 取第 3 个即 Both Channels（双声道），不靠显示名，跨语言通用
+        if(!fx || fx.numProperties < 3) return 1; // 异常兜底
+        return 3;
     }
 
     function buildBasicExpr(name, bothIdx, o){
