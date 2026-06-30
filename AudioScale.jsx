@@ -169,7 +169,20 @@
 
     function applyScaleExpression(target, expr){
         var scaleProp = target.property("ADBE Transform Group").property("ADBE Scale");
-        scaleProp.dimensionsSeparated = false;
+        // 不直接操作 dimensionsSeparated（AE 2026 在某些图层类型上会触发
+        // "stream doesn't support separated dimensions" 内部验证错误）。
+        // 改为：先取消既有表达式 → 用 setValue 写入一个确定的二维值，
+        // AE 会自动把 Scale 规整为非分离状态 → 再写入表达式。
+        try { scaleProp.expression = ""; } catch(_){}
+        try {
+            // 先读当前值，保证写入的是合法的二维数组
+            var cur = scaleProp.value;
+            if (cur && cur.length === 2) {
+                scaleProp.setValue(cur);
+            } else {
+                scaleProp.setValue([100, 100]);
+            }
+        } catch(_){}
         scaleProp.expression = expr;
     }
 
