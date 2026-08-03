@@ -131,7 +131,9 @@ v                          // 3D 层的 Z 保持原值
 
 ## 开发文档
 
-参与开发或二次改造请参阅 [DEVELOPMENT.md](DEVELOPMENT.md)。
+- **更新日志**：见 [CHANGELOG.md](./CHANGELOG.md)
+- **开发文档**：见 [DEVELOPMENT.md](./DEVELOPMENT.md)（5 条关键问题 + 踩坑时间线）
+- **项目规则（AI 用）**：见 [AGENTS.md](./AGENTS.md)（技术栈、关键坑、约定）
 
 ---
 
