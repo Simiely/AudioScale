@@ -1,3 +1,12 @@
+> [!IMPORTANT]
+> ## 📦 本仓库已归档 —— 请到统一仓库下载
+> 本插件已并入 **[Simiely/ae-tools](https://github.com/Simiely/ae-tools)**（`panels/AudioScale/`），
+> 后续更新与问题修复都在 ae-tools 统一维护，**本仓库只读、不再更新**。
+>
+> 最新版源码：https://github.com/Simiely/ae-tools/tree/main/panels/AudioScale
+
+---
+
 # AudioScale
 
 通过音频驱动 After Effects 图层缩放的 ExtendScript 面板脚本。
